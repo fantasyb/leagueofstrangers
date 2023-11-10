@@ -7,12 +7,9 @@ export const enableBlog = false; // requires VITE_CONTENTFUL_ACCESS_TOKEN and VI
 
 /*   STEP 2   */
 export const homepageText = `
-  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
-  <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
-  <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
-  <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+  <p>Welcome to The Stranger League, where the spirit of competition meets the unpredictability of fantasy football. Founded in 2021 by a diverse group of enthusiasts who were once strangers, our league has blossomed into a vibrant community of ambitious team owners. Here, friendships have been forged in the fire of friendly rivalry, and strategies clash weekly on the virtual gridiron.</p>
+  <p>Our league stands as a testament to the dream of building a lasting dynasty. With every draft pick and trade, owners are not just playing for the season; they're crafting legacies to hoist the coveted Stranger League Trophy. Whether favoring a win-now approach or investing in the potential of rookies, our team managers navigate the treacherous waters of bad trades, player retirements, and unforeseen injuries. It's a battleground where only the savvy can rise above the chaos ordained by the fantasy gods to claim championship glory.</p>
+  <p>The Stranger League isn't just about winning; it's a journey, an experience, and a challenge that only the most resilient can conquer</p>
 `;
 
 /*   STEP 3   */
