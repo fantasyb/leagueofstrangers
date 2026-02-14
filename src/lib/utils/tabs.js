@@ -78,4 +78,9 @@ export const tabs = [
         label: 'Resources',
         dest: '/resources',
     },
+    {
+        icon: 'psychology',
+        label: 'AI Manager',
+        dest: '/agent',
+    },
 ];
