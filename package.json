@@ -49,6 +49,7 @@
     "docker-build": "docker build . -t $USER/league-page:latest",
     "docker-run": "npm run docker-build && docker run -p 3000:3000 $USER/league-page:latest",
     "preview": "vite preview",
+    "postinstall": "node scripts/patch-adapter.js",
     "prepare": "npm run smui-theme-light && npm run smui-theme-dark",
     "smui-theme-light": "smui-theme compile static/smui.css -i src/theme",
     "smui-theme-dark": "smui-theme compile static/smui-dark.css -i src/theme/dark",
