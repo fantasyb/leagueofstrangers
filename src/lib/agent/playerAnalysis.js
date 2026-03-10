@@ -121,6 +121,15 @@ export function calculateDynastyValue(player, stats = {}, enrichment = {}) {
         value *= injuryDiscount;
     }
 
+    // Market consensus calibration (KTC + FantasyCalc blend)
+    // If external market data is available, blend it in:
+    //   - 80% internal model, 20% market consensus
+    //   - This anchors extreme outliers without letting the market override the model
+    const marketConsensus = enrichment.marketConsensus?.value;
+    if (marketConsensus && marketConsensus > 0) {
+        value = value * 0.80 + marketConsensus * 0.20;
+    }
+
     return Math.round(Math.min(10000, Math.max(0, value)));
 }
 
@@ -208,6 +217,42 @@ function calculateProductionFactor(player, stats, pos) {
 }
 
 /**
+ * Calculate internal model value (without market consensus blend).
+ * Used for divergence detection in market signals.
+ */
+function calculateInternalValue(player, stats, enrichment) {
+    const pos = player.pos || player.position;
+    const curve = getAdjustedCurve(pos);
+    if (!curve) return 0;
+
+    const age = player.age || estimateAge(player);
+    const baseTier = classifyTier(player, stats);
+    const tierMult = TIER_MULTIPLIERS[baseTier] || TIER_MULTIPLIERS.bench;
+
+    let ageFactor = 1.0;
+    if (age < curve.peakStart) {
+        ageFactor = 0.85 + ((curve.peakStart - age) * 0.04);
+    } else if (age > curve.peakEnd) {
+        ageFactor = Math.max(0.1, 1.0 - ((age - curve.peakEnd) * curve.declineRate));
+    }
+
+    const productionFactor = calculateProductionFactor(player, stats, pos);
+    let value = curve.baseValue * tierMult * ageFactor * productionFactor;
+
+    if (age <= 24) value *= 1.1;
+
+    const playerName = `${player.fn} ${player.ln}`;
+    value *= getDraftCapitalFactor(playerName, player.years_exp);
+    if (['RB', 'WR', 'TE'].includes(pos)) {
+        value *= getAthleticFactor(playerName, pos);
+    }
+    if (enrichment.trendFactor) value *= enrichment.trendFactor;
+    if (player.is) value *= getInjuryDiscount(player.is);
+
+    return Math.round(Math.min(10000, Math.max(0, value)));
+}
+
+/**
  * Apply injury-based discount to value.
  */
 function getInjuryDiscount(injuryStatus) {
@@ -284,6 +329,38 @@ export function classifyMarketSignal(player, stats = {}, enrichment = {}) {
         }
     }
 
+    // Market consensus divergence signals
+    // If our internal model and the market disagree significantly, flag it
+    const marketConsensus = enrichment.marketConsensus;
+    if (marketConsensus?.value) {
+        const internalValue = calculateInternalValue(player, stats, enrichment);
+        const divergence = (marketConsensus.value - internalValue) / Math.max(internalValue, 1);
+
+        if (divergence > 0.25 && signal === 'Hold') {
+            // Market values them much higher than our model
+            signal = 'Sell High';
+            reasons.push(`Market overvalues vs production (KTC/FC: ${marketConsensus.value.toLocaleString()} vs model: ${internalValue.toLocaleString()})`);
+        } else if (divergence < -0.25 && signal === 'Hold') {
+            // Market values them much lower than our model
+            signal = 'Buy Low';
+            reasons.push(`Market undervalues vs production (KTC/FC: ${marketConsensus.value.toLocaleString()} vs model: ${internalValue.toLocaleString()})`);
+        } else if (divergence > 0.15 && signal !== 'Buy Low') {
+            reasons.push(`Market premium: +${Math.round(divergence * 100)}% above model value`);
+        } else if (divergence < -0.15 && signal !== 'Sell High') {
+            reasons.push(`Market discount: ${Math.round(divergence * 100)}% below model value`);
+        }
+    }
+
+    // KTC trend signals
+    const ktcTrend = enrichment.ktcTrend;
+    if (ktcTrend) {
+        if (ktcTrend.day30 > 500) {
+            reasons.push(`KTC trending up +${ktcTrend.day30} over 30 days`);
+        } else if (ktcTrend.day30 < -500) {
+            reasons.push(`KTC trending down ${ktcTrend.day30} over 30 days`);
+        }
+    }
+
     return { signal, reasons, trendFactor };
 }
 
@@ -336,6 +413,31 @@ export function buildPlayerProfile(playerId, playerData, enrichment = {}) {
     // NFL stats from enrichment
     const nflStats = playerEnrichment.nflStats || null;
 
+    // Market consensus data
+    const marketConsensus = playerEnrichment.marketConsensus || null;
+    const ktcTrend = playerEnrichment.ktcTrend || null;
+    const ktcRank = playerEnrichment.ktcRank || null;
+
+    // Calculate value comparison vs market
+    let marketComparison = null;
+    if (marketConsensus?.value) {
+        const internalVal = calculateInternalValue({ ...player, age }, stats, playerEnrichment);
+        const diff = dynastyValue - marketConsensus.value;
+        const pctDiff = Math.round((diff / Math.max(marketConsensus.value, 1)) * 100);
+        marketComparison = {
+            internalValue: internalVal,
+            consensusValue: marketConsensus.value,
+            ktcValue: marketConsensus.ktcValue,
+            fcValue: marketConsensus.fcValue,
+            sources: marketConsensus.sources,
+            difference: diff,
+            percentDifference: pctDiff,
+            assessment: pctDiff > 15 ? 'Overvalued by Market' :
+                       pctDiff < -15 ? 'Undervalued by Market' :
+                       'Fair Market Value',
+        };
+    }
+
     return {
         id: playerId,
         name: playerName,
@@ -354,6 +456,9 @@ export function buildPlayerProfile(playerId, playerData, enrichment = {}) {
         outlook: generateOutlook(pos, age, tier, windowStatus, avgProjection, marketSignal),
         scouting,
         marketSignal,
+        marketConsensus: marketComparison,
+        ktcTrend,
+        ktcRank,
         nflStats,
         depthChartOrder: player.depth_chart_order,
         college: player.college,

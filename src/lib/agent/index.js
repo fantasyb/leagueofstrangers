@@ -28,6 +28,8 @@ import { analyzeRoster, optimizeLineup, leaguePowerRankings } from './rosterAnal
 import { assessStrategy } from './dynastyStrategy.js';
 import { runWaiverAnalysis } from './waiverAnalysis.js';
 import { getSeasonLeaders } from './espnClient.js';
+import { getKTCValues } from './ktcClient.js';
+import { getFantasyCalcValues, getFantasyCalcBySleeperIds } from './fantasyCalcClient.js';
 
 // Cache for expensive API calls
 let playerCache = null;
@@ -52,10 +54,14 @@ async function loadPlayerDatabase() {
 }
 
 /**
- * Build enrichment data: production trends, NFL stats, etc.
- * This data supplements the basic Sleeper player info.
+ * Build enrichment data: production trends, NFL stats, market consensus values.
+ * This data supplements the basic Sleeper player info with external sources:
+ *   - Sleeper season stats → trend analysis
+ *   - ESPN stats → real NFL production
+ *   - KeepTradeCut → dynasty market consensus values
+ *   - FantasyCalc → crowd-sourced trade values from actual dynasty trades
  */
-async function buildEnrichmentData(season) {
+async function buildEnrichmentData(season, playerData = null, leagueSettings = {}) {
     const now = Date.now();
     if (enrichmentCache && (now - enrichmentCacheTime) < ENRICHMENT_CACHE_TTL) {
         return enrichmentCache;
@@ -64,9 +70,21 @@ async function buildEnrichmentData(season) {
     const enrichment = {};
 
     try {
-        // Fetch Sleeper season stats for trend analysis
-        const { current, previous } = await getPlayerStatsTwoSeasons(season);
+        // Phase 1: Fetch all data sources in parallel
+        const [sleeperStats, espnStats, ktcValues, fcValues] = await Promise.all([
+            getPlayerStatsTwoSeasons(season).catch(() => ({ current: null, previous: null })),
+            getSeasonLeaders(season).catch(() => null),
+            getKTCValues().catch(() => null),
+            getFantasyCalcValues({
+                isDynasty: true,
+                numQbs: leagueSettings.superflex ? 2 : 1,
+                ppr: leagueSettings.ppr ? 1 : leagueSettings.halfPpr ? 0.5 : 1,
+                numTeams: 12,
+            }).catch(() => null),
+        ]);
 
+        // Phase 2: Build base enrichment from Sleeper stats
+        const { current, previous } = sleeperStats;
         if (current) {
             for (const pid in current) {
                 const curr = current[pid];
@@ -76,31 +94,135 @@ async function buildEnrichmentData(season) {
                     trendFactor: calculateTrendFactor(curr, prev),
                     seasonStats: curr,
                     previousSeasonStats: prev || null,
+                    nflStats: null,
+                    ktcValue: null,
+                    ktcSuperflexValue: null,
+                    ktcTrend: null,
+                    ktcRank: null,
+                    fcValue: null,
+                    fcRank: null,
+                    marketConsensus: null,
                 };
             }
         }
 
-        // Try to fetch ESPN season leaders for additional context
-        try {
-            const espnStats = await getSeasonLeaders(season);
-            if (espnStats) {
-                for (const pid in enrichment) {
-                    const player = enrichment[pid];
-                    if (!player.seasonStats) continue;
+        // Phase 3: Layer in ESPN stats
+        if (espnStats) {
+            for (const pid in enrichment) {
+                const player = enrichment[pid];
+                if (!player.seasonStats) continue;
 
-                    // Try to match by name (ESPN uses display names)
-                    const firstName = player.seasonStats?.first_name || '';
-                    const lastName = player.seasonStats?.last_name || '';
-                    if (firstName && lastName) {
-                        const key = `${firstName} ${lastName}`.toLowerCase();
-                        if (espnStats[key]) {
-                            enrichment[pid].nflStats = espnStats[key].stats;
-                        }
+                const firstName = player.seasonStats?.first_name || '';
+                const lastName = player.seasonStats?.last_name || '';
+                if (firstName && lastName) {
+                    const key = `${firstName} ${lastName}`.toLowerCase();
+                    if (espnStats[key]) {
+                        enrichment[pid].nflStats = espnStats[key].stats;
                     }
                 }
             }
-        } catch {
-            // ESPN data is supplemental, don't fail if unavailable
+        }
+
+        // Phase 4: Layer in KTC dynasty consensus values
+        if (ktcValues) {
+            // Match KTC values to Sleeper player IDs by name
+            for (const pid in playerData || {}) {
+                const p = playerData[pid];
+                if (!p?.fn || !p?.ln) continue;
+
+                const name = `${p.fn} ${p.ln}`.toLowerCase().replace(/[.']/g, '').replace(/\s+/g, ' ').trim();
+                const ktc = ktcValues[name]
+                    || ktcValues[name.replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/, '')]
+                    || null;
+
+                if (ktc) {
+                    if (!enrichment[pid]) {
+                        enrichment[pid] = {
+                            trendFactor: 1.0,
+                            seasonStats: null,
+                            previousSeasonStats: null,
+                            nflStats: null,
+                            ktcValue: null,
+                            ktcSuperflexValue: null,
+                            ktcTrend: null,
+                            ktcRank: null,
+                            fcValue: null,
+                            fcRank: null,
+                            marketConsensus: null,
+                        };
+                    }
+                    enrichment[pid].ktcValue = ktc.value;
+                    enrichment[pid].ktcSuperflexValue = ktc.superflexValue;
+                    enrichment[pid].ktcTrend = {
+                        day7: ktc.trend7Day,
+                        day30: ktc.trend30Day,
+                    };
+                    enrichment[pid].ktcRank = ktc.rank;
+                }
+            }
+        }
+
+        // Phase 5: Layer in FantasyCalc values
+        if (fcValues) {
+            for (const pid in playerData || {}) {
+                const p = playerData[pid];
+                if (!p?.fn || !p?.ln) continue;
+
+                const name = `${p.fn} ${p.ln}`.toLowerCase().replace(/[.']/g, '').replace(/\s+/g, ' ').trim();
+                const fc = fcValues[name]
+                    || fcValues[name.replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/, '')]
+                    || null;
+
+                if (fc) {
+                    if (!enrichment[pid]) {
+                        enrichment[pid] = {
+                            trendFactor: 1.0,
+                            seasonStats: null,
+                            previousSeasonStats: null,
+                            nflStats: null,
+                            ktcValue: null,
+                            ktcSuperflexValue: null,
+                            ktcTrend: null,
+                            ktcRank: null,
+                            fcValue: null,
+                            fcRank: null,
+                            marketConsensus: null,
+                        };
+                    }
+                    enrichment[pid].fcValue = fc.value;
+                    enrichment[pid].fcRank = fc.overallRank;
+                }
+            }
+        }
+
+        // Phase 6: Compute blended market consensus
+        for (const pid in enrichment) {
+            const e = enrichment[pid];
+            const ktcVal = leagueSettings.superflex ? e.ktcSuperflexValue : e.ktcValue;
+            const fcVal = e.fcValue;
+
+            if (ktcVal || fcVal) {
+                // Normalize both to 0-10000 scale
+                // KTC is already roughly 0-9999
+                // FantasyCalc uses a different scale, normalize proportionally
+                const ktcNorm = ktcVal ? Math.min(10000, ktcVal) : null;
+                const fcNorm = fcVal ? normalizeFantasyCalcValue(fcVal) : null;
+
+                let consensus;
+                if (ktcNorm && fcNorm) {
+                    // Weighted blend: KTC 60%, FantasyCalc 40% (KTC is more established)
+                    consensus = Math.round(ktcNorm * 0.6 + fcNorm * 0.4);
+                } else {
+                    consensus = ktcNorm || fcNorm;
+                }
+
+                enrichment[pid].marketConsensus = {
+                    value: consensus,
+                    ktcValue: ktcNorm,
+                    fcValue: fcNorm,
+                    sources: [ktcNorm ? 'KTC' : null, fcNorm ? 'FantasyCalc' : null].filter(Boolean),
+                };
+            }
         }
     } catch {
         // Enrichment is optional, return empty if API fails
@@ -109,6 +231,16 @@ async function buildEnrichmentData(season) {
     enrichmentCache = enrichment;
     enrichmentCacheTime = now;
     return enrichment;
+}
+
+/**
+ * Normalize FantasyCalc values to our 0-10000 scale.
+ * FC values max around 10000-12000 for top players.
+ */
+function normalizeFantasyCalcValue(fcValue) {
+    // FC dynasty values roughly align with KTC but can go higher for top guys
+    // Cap at 10000 to match our scale
+    return Math.min(10000, Math.max(0, Math.round(fcValue)));
 }
 
 /**
@@ -140,8 +272,8 @@ export async function runFullAnalysis(leagueId, myRosterId) {
     // Build computed player data
     const playerData = buildPlayerData(allPlayers, scoringSettings);
 
-    // Build enrichment data (trends, ESPN stats)
-    const enrichment = await buildEnrichmentData(league.season).catch(() => ({}));
+    // Build enrichment data (trends, ESPN stats, KTC, FantasyCalc)
+    const enrichment = await buildEnrichmentData(league.season, playerData, leagueSettings).catch(() => ({}));
 
     const myRoster = rosters[myRosterId];
     if (!myRoster) {
@@ -199,9 +331,9 @@ export async function getTradeRecommendations(leagueId, myRosterId) {
         loadPlayerDatabase(),
     ]);
 
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     const packages = generateTradePackages(myRosterId, context.rosters, playerData, context.rosterPositions, enrichment, context.tradedPicks);
     const targets = findTradeTargets(myRosterId, context.rosters, playerData, context.rosterPositions, enrichment);
@@ -227,9 +359,9 @@ export async function getWaiverAnalysis(leagueId, myRosterId) {
         loadPlayerDatabase(),
     ]);
 
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     return runWaiverAnalysis(context.rosters, playerData, context.rosterPositions, myRosterId, enrichment);
 }
@@ -243,9 +375,9 @@ export async function getPlayerProfile(leagueId, playerId) {
         loadPlayerDatabase(),
     ]);
 
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     return buildPlayerProfile(playerId, playerData, enrichment);
 }
@@ -303,9 +435,9 @@ export async function getStrategyAssessment(leagueId, myRosterId) {
         loadPlayerDatabase(),
     ]);
 
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     return assessStrategy(
         context.rosters[myRosterId],
@@ -322,9 +454,9 @@ export async function getStrategyAssessment(leagueId, myRosterId) {
 export async function evaluateTrade(leagueId, sendIds, receiveIds) {
     const allPlayers = await loadPlayerDatabase();
     const context = await getFullLeagueContext(leagueId);
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     return analyzeTrade(sendIds, receiveIds, playerData, enrichment);
 }
@@ -338,9 +470,9 @@ export async function getPowerRankings(leagueId) {
         loadPlayerDatabase(),
     ]);
 
-    configureLeagueContext(context);
+    const leagueSettings = configureLeagueContext(context);
     const playerData = buildPlayerData(allPlayers, context.scoringSettings);
-    const enrichment = await buildEnrichmentData(context.league.season).catch(() => ({}));
+    const enrichment = await buildEnrichmentData(context.league.season, playerData, leagueSettings).catch(() => ({}));
 
     return leaguePowerRankings(context.rosters, playerData, context.rosterPositions, enrichment);
 }

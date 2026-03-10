@@ -716,7 +716,12 @@
 											</span>
 										{/if}
 									</div>
-									<div class="player-meta">{player.position} - {player.team} - Age {player.age}</div>
+									<div class="player-meta">
+										{player.position} - {player.team} - Age {player.age}
+										{#if player.marketConsensus}
+											<span style="color: #64748b;"> | Market: {player.marketConsensus.consensusValue.toLocaleString()}</span>
+										{/if}
+									</div>
 								</div>
 								<div class="player-value" style="color: {getTierColor(player.tier)}">{player.dynastyValue.toLocaleString()}</div>
 							</div>
@@ -838,6 +843,12 @@
 											{/if}
 											{#if player.scouting?.draftCapital}
 												<span style="color: #64748b;"> | {player.scouting.draftCapital.label}</span>
+											{/if}
+											{#if player.marketConsensus}
+												<span style="color: #64748b;"> | </span>
+												<span style="color: {player.marketConsensus.percentDifference > 10 ? '#22c55e' : player.marketConsensus.percentDifference < -10 ? '#ef4444' : '#64748b'}; font-size: 0.85em;">
+													MKT: {player.marketConsensus.consensusValue.toLocaleString()}
+												</span>
 											{/if}
 										</div>
 									</div>
@@ -1339,6 +1350,68 @@
 								<div style="font-size: 0.8em; color: #94a3b8;">dynasty value</div>
 							</div>
 						</div>
+
+						<!-- Market Consensus Comparison -->
+						{#if selectedPlayerProfile.marketConsensus}
+							<div style="margin-top: 12px; padding: 12px; background: #1e293b; border: 1px solid #334155; border-radius: 8px;">
+								<div style="font-size: 0.8em; color: #94a3b8; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+									Market Consensus ({selectedPlayerProfile.marketConsensus.sources.join(' + ')})
+								</div>
+								<div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+									{#if selectedPlayerProfile.marketConsensus.ktcValue}
+										<div style="text-align: center;">
+											<div style="font-size: 1.1em; font-weight: 700; color: #e2e8f0;">
+												{selectedPlayerProfile.marketConsensus.ktcValue.toLocaleString()}
+											</div>
+											<div style="font-size: 0.7em; color: #64748b;">KTC</div>
+										</div>
+									{/if}
+									{#if selectedPlayerProfile.marketConsensus.fcValue}
+										<div style="text-align: center;">
+											<div style="font-size: 1.1em; font-weight: 700; color: #e2e8f0;">
+												{selectedPlayerProfile.marketConsensus.fcValue.toLocaleString()}
+											</div>
+											<div style="font-size: 0.7em; color: #64748b;">FantasyCalc</div>
+										</div>
+									{/if}
+									<div style="text-align: center;">
+										<div style="font-size: 1.1em; font-weight: 700; color: #e2e8f0;">
+											{selectedPlayerProfile.marketConsensus.consensusValue.toLocaleString()}
+										</div>
+										<div style="font-size: 0.7em; color: #64748b;">Consensus</div>
+									</div>
+									<div style="margin-left: auto; text-align: center;">
+										<div style="font-size: 1.1em; font-weight: 700; color: {selectedPlayerProfile.marketConsensus.percentDifference > 10 ? '#22c55e' : selectedPlayerProfile.marketConsensus.percentDifference < -10 ? '#ef4444' : '#94a3b8'}">
+											{selectedPlayerProfile.marketConsensus.percentDifference > 0 ? '+' : ''}{selectedPlayerProfile.marketConsensus.percentDifference}%
+										</div>
+										<div style="font-size: 0.7em; color: {selectedPlayerProfile.marketConsensus.percentDifference > 10 ? '#22c55e' : selectedPlayerProfile.marketConsensus.percentDifference < -10 ? '#ef4444' : '#64748b'}">
+											{selectedPlayerProfile.marketConsensus.assessment}
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
+
+						<!-- KTC Trend -->
+						{#if selectedPlayerProfile.ktcTrend && (selectedPlayerProfile.ktcTrend.day7 || selectedPlayerProfile.ktcTrend.day30)}
+							<div style="display: flex; gap: 12px; margin-top: 8px;">
+								{#if selectedPlayerProfile.ktcTrend.day7}
+									<div style="font-size: 0.8em; color: {selectedPlayerProfile.ktcTrend.day7 > 0 ? '#22c55e' : selectedPlayerProfile.ktcTrend.day7 < 0 ? '#ef4444' : '#64748b'}">
+										7d: {selectedPlayerProfile.ktcTrend.day7 > 0 ? '+' : ''}{selectedPlayerProfile.ktcTrend.day7}
+									</div>
+								{/if}
+								{#if selectedPlayerProfile.ktcTrend.day30}
+									<div style="font-size: 0.8em; color: {selectedPlayerProfile.ktcTrend.day30 > 0 ? '#22c55e' : selectedPlayerProfile.ktcTrend.day30 < 0 ? '#ef4444' : '#64748b'}">
+										30d: {selectedPlayerProfile.ktcTrend.day30 > 0 ? '+' : ''}{selectedPlayerProfile.ktcTrend.day30}
+									</div>
+								{/if}
+								{#if selectedPlayerProfile.ktcRank}
+									<div style="font-size: 0.8em; color: #64748b;">
+										KTC Rank: #{selectedPlayerProfile.ktcRank}
+									</div>
+								{/if}
+							</div>
+						{/if}
 
 						<div class="grid" style="margin-top: 15px;">
 							<div>
