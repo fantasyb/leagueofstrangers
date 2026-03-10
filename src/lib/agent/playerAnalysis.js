@@ -2,10 +2,13 @@
  * Player Analysis & Dynasty Value System
  *
  * Calculates dynasty trade values based on position, age, production,
- * and situational factors. Uses a 0-10000 point scale (KTC-style).
+ * league format (Superflex, TE Premium), draft capital, athleticism,
+ * and production trends. Uses a 0-10000 point scale (KTC-style).
  */
 
-// Position prime age ranges and decline curves
+import { getDraftCapitalFactor, getAthleticFactor, getScoutingProfile } from './nflDataClient.js';
+
+// Default position prime age ranges and decline curves
 const POSITION_AGE_CURVES = {
     QB: { peakStart: 25, peakEnd: 33, declineRate: 0.06, longevity: 40, baseValue: 8000 },
     RB: { peakStart: 22, peakEnd: 27, declineRate: 0.15, longevity: 32, baseValue: 6500 },
@@ -13,6 +16,16 @@ const POSITION_AGE_CURVES = {
     TE: { peakStart: 24, peakEnd: 31, declineRate: 0.07, longevity: 36, baseValue: 5500 },
     K:  { peakStart: 25, peakEnd: 36, declineRate: 0.03, longevity: 42, baseValue: 1000 },
     DEF:{ peakStart: 0,  peakEnd: 99, declineRate: 0.00, longevity: 99, baseValue: 1500 },
+};
+
+// Superflex adjustments — QBs become the most valuable asset
+const SUPERFLEX_ADJUSTMENTS = {
+    QB: { baseValue: 10500 },
+};
+
+// TE Premium adjustments — TEs get a significant boost
+const TEP_ADJUSTMENTS = {
+    TE: { baseValue: 7500 },
 };
 
 // Scoring tier multipliers - applied to base value
@@ -24,12 +37,39 @@ const TIER_MULTIPLIERS = {
     roster:    0.15,  // Roster stash / handcuff
 };
 
+// League settings context (set by setLeagueContext)
+let leagueCtx = { superflex: false, tePremium: false, halfPpr: false, ppr: true };
+
+/**
+ * Set the league format context for all value calculations.
+ */
+export function setLeagueContext(settings) {
+    leagueCtx = { ...leagueCtx, ...settings };
+}
+
+/**
+ * Get the position curve adjusted for league format.
+ */
+function getAdjustedCurve(pos) {
+    const base = { ...POSITION_AGE_CURVES[pos] };
+    if (!base) return null;
+
+    if (leagueCtx.superflex && SUPERFLEX_ADJUSTMENTS[pos]) {
+        base.baseValue = SUPERFLEX_ADJUSTMENTS[pos].baseValue;
+    }
+    if (leagueCtx.tePremium && TEP_ADJUSTMENTS[pos]) {
+        base.baseValue = TEP_ADJUSTMENTS[pos].baseValue;
+    }
+    return base;
+}
+
 /**
  * Calculate a player's dynasty value score (0-10000).
+ * Now considers league format, draft capital, athleticism, and trends.
  */
-export function calculateDynastyValue(player, stats = {}) {
+export function calculateDynastyValue(player, stats = {}, enrichment = {}) {
     const pos = player.pos || player.position;
-    const curve = POSITION_AGE_CURVES[pos];
+    const curve = getAdjustedCurve(pos);
     if (!curve) return 0;
 
     const age = player.age || estimateAge(player);
@@ -39,9 +79,8 @@ export function calculateDynastyValue(player, stats = {}) {
     // Age factor: 1.0 during prime, declining after
     let ageFactor = 1.0;
     if (age < curve.peakStart) {
-        // Young players get a youth premium (upside)
         const yearsToGo = curve.peakStart - age;
-        ageFactor = 0.85 + (yearsToGo * 0.04); // slight premium for youth
+        ageFactor = 0.85 + (yearsToGo * 0.04);
     } else if (age > curve.peakEnd) {
         const yearsOver = age - curve.peakEnd;
         ageFactor = Math.max(0.1, 1.0 - (yearsOver * curve.declineRate));
@@ -56,6 +95,24 @@ export function calculateDynastyValue(player, stats = {}) {
     // Youth premium for players under 25
     if (age <= 24 && (pos === 'WR' || pos === 'RB' || pos === 'QB' || pos === 'TE')) {
         value *= 1.1;
+    }
+
+    // === NEW VALUE FACTORS ===
+
+    // Draft capital factor (matters more for young players)
+    const playerName = `${player.fn} ${player.ln}`;
+    const draftFactor = getDraftCapitalFactor(playerName, player.years_exp);
+    value *= draftFactor;
+
+    // Athletic profile factor (±5% for skill positions)
+    if (['RB', 'WR', 'TE'].includes(pos)) {
+        const athleticFactor = getAthleticFactor(playerName, pos);
+        value *= athleticFactor;
+    }
+
+    // Production trend factor
+    if (enrichment.trendFactor) {
+        value *= enrichment.trendFactor;
     }
 
     // Injury discount
@@ -77,20 +134,28 @@ function estimateAge(player) {
         return Math.floor((now - birth) / (365.25 * 24 * 60 * 60 * 1000));
     }
     if (player.years_exp !== undefined && player.years_exp !== null) {
-        // Rough estimate: drafted at ~22 + years of experience
         return 22 + player.years_exp;
     }
-    return 26; // default assumption
+    return 26;
 }
 
 /**
  * Classify player into a production tier.
+ * Adjusts thresholds for Superflex (QBs become more valuable as starters).
  */
 function classifyTier(player, stats) {
     const weeklyPts = stats.avgPointsPerWeek || 0;
     const pos = player.pos || player.position;
 
     if (pos === 'QB') {
+        // In Superflex, QB thresholds shift — more QBs are "startable"
+        if (leagueCtx.superflex) {
+            if (weeklyPts >= 22) return 'elite';
+            if (weeklyPts >= 15) return 'starter';
+            if (weeklyPts >= 10) return 'flex';     // SF flex = starting a QB2
+            if (weeklyPts >= 5) return 'bench';
+            return 'roster';
+        }
         if (weeklyPts >= 22) return 'elite';
         if (weeklyPts >= 16) return 'starter';
         if (weeklyPts >= 12) return 'flex';
@@ -112,6 +177,14 @@ function classifyTier(player, stats) {
         return 'roster';
     }
     if (pos === 'TE') {
+        // In TE Premium, TE thresholds go up (more TEs score well)
+        if (leagueCtx.tePremium) {
+            if (weeklyPts >= 16) return 'elite';
+            if (weeklyPts >= 11) return 'starter';
+            if (weeklyPts >= 8) return 'flex';
+            if (weeklyPts >= 4) return 'bench';
+            return 'roster';
+        }
         if (weeklyPts >= 14) return 'elite';
         if (weeklyPts >= 10) return 'starter';
         if (weeklyPts >= 7) return 'flex';
@@ -128,12 +201,9 @@ function calculateProductionFactor(player, stats, pos) {
     if (!stats.avgPointsPerWeek && !stats.totalPoints) return 0.7;
 
     const avg = stats.avgPointsPerWeek || 0;
-
-    // Normalize production across positions
     const benchmarks = { QB: 20, RB: 15, WR: 15, TE: 10, K: 8, DEF: 7 };
     const benchmark = benchmarks[pos] || 10;
 
-    // Factor ranges from 0.3 (terrible) to 1.5 (elite)
     return Math.max(0.3, Math.min(1.5, 0.5 + (avg / benchmark) * 0.5));
 }
 
@@ -142,27 +212,93 @@ function calculateProductionFactor(player, stats, pos) {
  */
 function getInjuryDiscount(injuryStatus) {
     const discounts = {
-        'Out': 0.85,
-        'Doubtful': 0.90,
-        'Questionable': 0.95,
-        'IR': 0.70,
-        'PUP': 0.75,
-        'Sus': 0.60,
-        'COV': 0.90,
+        'Out': 0.85, 'Doubtful': 0.90, 'Questionable': 0.95,
+        'IR': 0.70, 'PUP': 0.75, 'Sus': 0.60, 'COV': 0.90,
     };
     return discounts[injuryStatus] || 0.95;
 }
 
 /**
- * Build a full player profile with dynasty analysis.
+ * Calculate production trend factor.
+ * Compares current season stats to previous season.
+ * Returns a multiplier: >1.0 = improving, <1.0 = declining.
  */
-export function buildPlayerProfile(playerId, playerData, rosterContext = null) {
+export function calculateTrendFactor(currentStats, previousStats) {
+    if (!currentStats || !previousStats) return 1.0;
+
+    const currPpg = currentStats.pts_ppr_per_game || currentStats.avgPointsPerWeek || 0;
+    const prevPpg = previousStats.pts_ppr_per_game || previousStats.avgPointsPerWeek || 0;
+
+    if (prevPpg === 0) return 1.0;
+
+    const changePercent = (currPpg - prevPpg) / prevPpg;
+
+    // Cap the trend factor between 0.85 and 1.15
+    if (changePercent > 0.15) return 1.12;
+    if (changePercent > 0.05) return 1.0 + changePercent * 0.8;
+    if (changePercent < -0.15) return 0.88;
+    if (changePercent < -0.05) return 1.0 + changePercent * 0.8;
+    return 1.0;
+}
+
+/**
+ * Classify a player's market signal: Sell High, Buy Low, Hold, or Neutral.
+ */
+export function classifyMarketSignal(player, stats = {}, enrichment = {}) {
+    const pos = player.pos || player.position;
+    const age = player.age || estimateAge(player);
+    const tier = classifyTier(player, stats);
+    const trendFactor = enrichment.trendFactor || 1.0;
+    const playerName = `${player.fn} ${player.ln}`;
+    const draftCapitalFactor = getDraftCapitalFactor(playerName, player.years_exp);
+
+    let signal = 'Hold';
+    let reasons = [];
+
+    // SELL HIGH signals
+    if (tier === 'elite' && age >= 28 && pos === 'RB') {
+        signal = 'Sell High';
+        reasons.push('Elite RB production but approaching cliff age');
+    } else if (tier === 'elite' && age >= 31 && (pos === 'WR' || pos === 'TE')) {
+        signal = 'Sell High';
+        reasons.push(`Elite production but ${age} years old — value will decline`);
+    } else if (trendFactor > 1.10 && age >= 27) {
+        signal = 'Sell High';
+        reasons.push('Trending up but aging — peak value moment');
+    } else if (tier === 'starter' && trendFactor < 0.92 && age >= 28) {
+        signal = 'Sell High';
+        reasons.push('Declining production + aging — sell before value drops further');
+    }
+
+    // BUY LOW signals
+    if (signal === 'Hold') {
+        if (age <= 24 && draftCapitalFactor > 1.10 && (tier === 'bench' || tier === 'flex')) {
+            signal = 'Buy Low';
+            reasons.push('Young with high draft capital — hasn\'t broken out yet');
+        } else if (trendFactor < 0.90 && age <= 26 && tier !== 'roster') {
+            signal = 'Buy Low';
+            reasons.push('Down year but young — buy the dip');
+        } else if (player.is === 'IR' && age <= 27 && tier !== 'roster') {
+            signal = 'Buy Low';
+            reasons.push('Injured but young — depressed value, buy for recovery');
+        }
+    }
+
+    return { signal, reasons, trendFactor };
+}
+
+/**
+ * Build a full player profile with dynasty analysis.
+ * Now includes scouting profile, market signals, and enriched stats.
+ */
+export function buildPlayerProfile(playerId, playerData, enrichment = {}) {
     const player = playerData[playerId];
     if (!player) return null;
 
     const pos = player.pos || player.position;
-    const age = estimateAge({ ...player, years_exp: player.ye });
-    const curve = POSITION_AGE_CURVES[pos] || POSITION_AGE_CURVES['WR'];
+    const age = estimateAge({ ...player, years_exp: player.years_exp });
+    const curve = getAdjustedCurve(pos) || POSITION_AGE_CURVES['WR'];
+    const playerName = `${player.fn} ${player.ln}`;
 
     // Calculate projected weekly pts from player data
     const weeklyProjections = [];
@@ -178,8 +314,9 @@ export function buildPlayerProfile(playerId, playerData, rosterContext = null) {
         ? weeklyProjections.reduce((a, b) => a + b, 0) / weeklyProjections.length
         : 0;
 
+    const playerEnrichment = enrichment[playerId] || {};
     const stats = { avgPointsPerWeek: avgProjection, totalPoints: avgProjection * 17 };
-    const dynastyValue = calculateDynastyValue({ ...player, age }, stats);
+    const dynastyValue = calculateDynastyValue({ ...player, age }, stats, playerEnrichment);
     const tier = classifyTier({ ...player, age }, stats);
 
     // Championship window
@@ -188,9 +325,20 @@ export function buildPlayerProfile(playerId, playerData, rosterContext = null) {
                          yearsInPrime > 2 ? 'Prime Window' :
                          yearsInPrime > 0 ? 'Closing Window' : 'Past Prime';
 
+    // Scouting profile (draft capital + combine)
+    const scouting = getScoutingProfile(playerName, pos);
+
+    // Market signal
+    const marketSignal = classifyMarketSignal(
+        { ...player, age }, stats, playerEnrichment
+    );
+
+    // NFL stats from enrichment
+    const nflStats = playerEnrichment.nflStats || null;
+
     return {
         id: playerId,
-        name: `${player.fn} ${player.ln}`,
+        name: playerName,
         firstName: player.fn,
         lastName: player.ln,
         position: pos,
@@ -203,20 +351,24 @@ export function buildPlayerProfile(playerId, playerData, rosterContext = null) {
         yearsInPrime,
         avgProjection: Math.round(avgProjection * 100) / 100,
         weeklyProjections,
-        outlook: generateOutlook(pos, age, tier, windowStatus, avgProjection),
+        outlook: generateOutlook(pos, age, tier, windowStatus, avgProjection, marketSignal),
+        scouting,
+        marketSignal,
+        nflStats,
+        depthChartOrder: player.depth_chart_order,
+        college: player.college,
+        yearsExp: player.years_exp,
+        number: player.number,
     };
 }
 
 /**
  * Generate a text outlook for a player.
  */
-function generateOutlook(pos, age, tier, windowStatus, avgPts) {
+function generateOutlook(pos, age, tier, windowStatus, avgPts, marketSignal) {
     const tierLabels = {
-        elite: 'Elite',
-        starter: 'Solid Starter',
-        flex: 'Flex Option',
-        bench: 'Bench Depth',
-        roster: 'Roster Stash',
+        elite: 'Elite', starter: 'Solid Starter', flex: 'Flex Option',
+        bench: 'Bench Depth', roster: 'Roster Stash',
     };
 
     let outlook = `${tierLabels[tier] || 'Unknown'} ${pos}`;
@@ -235,20 +387,22 @@ function generateOutlook(pos, age, tier, windowStatus, avgPts) {
         outlook += ` Projected for ~${avgPts.toFixed(1)} PPG.`;
     }
 
+    if (marketSignal?.signal !== 'Hold' && marketSignal?.signal !== 'Neutral') {
+        outlook += ` **${marketSignal.signal}**: ${marketSignal.reasons[0] || ''}`;
+    }
+
     return outlook;
 }
 
 /**
  * Rank all players on a roster by dynasty value.
  */
-export function rankRosterPlayers(roster, playerData) {
+export function rankRosterPlayers(roster, playerData, enrichment = {}) {
     const profiles = [];
-    const allPlayerIds = [
-        ...(roster.players || []),
-    ];
+    const allPlayerIds = [...(roster.players || [])];
 
     for (const pid of allPlayerIds) {
-        const profile = buildPlayerProfile(pid, playerData);
+        const profile = buildPlayerProfile(pid, playerData, enrichment);
         if (profile) {
             profiles.push(profile);
         }
@@ -291,16 +445,20 @@ export function getPositionBreakdown(rankedPlayers) {
 
 /**
  * Grade a position group (A+ through F).
+ * Thresholds adjusted for Superflex (QB worth more) and TEP.
  */
 function gradePositionGroup(pos, players) {
     const totalValue = players.reduce((sum, p) => sum + p.dynastyValue, 0);
 
-    // Position-specific thresholds for grading
     const thresholds = {
-        QB: { 'A+': 12000, A: 9000, B: 6500, C: 4000, D: 2000 },
+        QB: leagueCtx.superflex
+            ? { 'A+': 16000, A: 12000, B: 8500, C: 5500, D: 3000 }
+            : { 'A+': 12000, A: 9000, B: 6500, C: 4000, D: 2000 },
         RB: { 'A+': 18000, A: 13000, B: 9000, C: 5000, D: 2500 },
         WR: { 'A+': 22000, A: 16000, B: 11000, C: 6000, D: 3000 },
-        TE: { 'A+': 8000, A: 6000, B: 4000, C: 2500, D: 1200 },
+        TE: leagueCtx.tePremium
+            ? { 'A+': 12000, A: 9000, B: 6000, C: 3500, D: 1800 }
+            : { 'A+': 8000, A: 6000, B: 4000, C: 2500, D: 1200 },
         K:  { 'A+': 2000, A: 1500, B: 1000, C: 500, D: 200 },
         DEF:{ 'A+': 3000, A: 2000, B: 1500, C: 1000, D: 500 },
     };
@@ -314,4 +472,4 @@ function gradePositionGroup(pos, players) {
     return 'F';
 }
 
-export { estimateAge, classifyTier, POSITION_AGE_CURVES, TIER_MULTIPLIERS };
+export { estimateAge, classifyTier, POSITION_AGE_CURVES, TIER_MULTIPLIERS, getAdjustedCurve };

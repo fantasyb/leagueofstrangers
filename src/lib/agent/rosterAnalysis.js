@@ -11,8 +11,8 @@ import { analyzeNeeds } from './tradeEngine.js';
 /**
  * Full roster analysis: grade, positional breakdown, strengths, weaknesses.
  */
-export function analyzeRoster(roster, playerData, rosterPositions) {
-    const rankedPlayers = rankRosterPlayers(roster, playerData);
+export function analyzeRoster(roster, playerData, rosterPositions, enrichment = {}) {
+    const rankedPlayers = rankRosterPlayers(roster, playerData, enrichment);
     const breakdown = getPositionBreakdown(rankedPlayers);
     const needs = analyzeNeeds(rosterPositions, rankedPlayers);
 
@@ -245,12 +245,12 @@ function generateLineupWarnings(starters, bench, rosterPositions) {
  * Compare your roster against all league rosters.
  * Returns power rankings.
  */
-export function leaguePowerRankings(rosters, playerData, rosterPositions) {
+export function leaguePowerRankings(rosters, playerData, rosterPositions, enrichment = {}) {
     const rankings = [];
 
     for (const rosterId in rosters) {
         const roster = rosters[rosterId];
-        const analysis = analyzeRoster(roster, playerData, rosterPositions);
+        const analysis = analyzeRoster(roster, playerData, rosterPositions, enrichment);
 
         rankings.push({
             rosterId: parseInt(rosterId),

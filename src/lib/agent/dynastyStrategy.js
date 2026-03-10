@@ -11,8 +11,8 @@ import { analyzeNeeds } from './tradeEngine.js';
 /**
  * Perform a full dynasty strategy assessment.
  */
-export function assessStrategy(roster, playerData, rosterPositions, leagueContext = {}) {
-    const rankedPlayers = rankRosterPlayers(roster, playerData);
+export function assessStrategy(roster, playerData, rosterPositions, leagueContext = {}, enrichment = {}) {
+    const rankedPlayers = rankRosterPlayers(roster, playerData, enrichment);
     const breakdown = getPositionBreakdown(rankedPlayers);
     const needs = analyzeNeeds(rosterPositions, rankedPlayers);
 

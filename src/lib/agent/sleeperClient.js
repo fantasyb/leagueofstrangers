@@ -128,3 +128,77 @@ export async function getWeekMatchups(leagueId, week) {
     }
     return paired;
 }
+
+/**
+ * Fetch player stats for a season from Sleeper.
+ */
+export async function getPlayerStats(season) {
+    return fetchJSON(`${SLEEPER_BASE}/stats/nfl/regular/${season}`);
+}
+
+/**
+ * Fetch player stats for the previous season (for trend analysis).
+ */
+export async function getPlayerStatsTwoSeasons(currentSeason) {
+    const [current, previous] = await Promise.all([
+        getPlayerStats(currentSeason).catch(() => null),
+        getPlayerStats(currentSeason - 1).catch(() => null),
+    ]);
+    return { current, previous };
+}
+
+/**
+ * Fetch all matchup history for trend analysis.
+ * Returns weekly scores for each roster across the season.
+ */
+export async function getMatchupHistory(leagueId, maxWeek = 18) {
+    const promises = [];
+    for (let week = 1; week <= maxWeek; week++) {
+        promises.push(
+            getLeagueMatchups(leagueId, week).catch(() => [])
+        );
+    }
+    const weeklyMatchups = await Promise.all(promises);
+
+    const history = {};
+    weeklyMatchups.forEach((matchups, i) => {
+        const week = i + 1;
+        for (const m of matchups) {
+            if (!history[m.roster_id]) history[m.roster_id] = {};
+            history[m.roster_id][week] = {
+                points: m.points || 0,
+                starters: m.starters || [],
+                starterPoints: m.starters_points || [],
+                matchupId: m.matchup_id,
+            };
+        }
+    });
+
+    return history;
+}
+
+/**
+ * Detect league format settings from roster positions.
+ * Returns { superflex, tePremium, halfPpr, ppr } flags.
+ */
+export function detectLeagueSettings(rosterPositions, scoringSettings) {
+    const hasSuperFlex = rosterPositions?.includes('SUPER_FLEX') || false;
+
+    // TE premium: check if TE receiving bonus is higher than WR
+    const teRecBonus = scoringSettings?.bonus_rec_te || scoringSettings?.rec_te || 0;
+    const hasTePremium = teRecBonus > 0;
+
+    // PPR detection
+    const recPts = scoringSettings?.rec || 0;
+    const isPpr = recPts >= 0.9;
+    const isHalfPpr = recPts >= 0.4 && recPts < 0.9;
+
+    return {
+        superflex: hasSuperFlex,
+        tePremium: hasTePremium,
+        tePremiumBonus: teRecBonus,
+        halfPpr: isHalfPpr,
+        ppr: isPpr,
+        recPoints: recPts,
+    };
+}

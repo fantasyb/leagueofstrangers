@@ -8,9 +8,13 @@
 	let activeTab = 'overview';
 	let tradeData = null;
 	let loadingTrades = false;
+	let waiverData = null;
+	let loadingWaivers = false;
 	let playerSearchQuery = '';
 	let playerSearchResults = [];
 	let searchingPlayers = false;
+	let selectedPlayerProfile = null;
+	let loadingProfile = false;
 
 	function selectRoster() {
 		if (selectedRoster) {
@@ -29,9 +33,21 @@
 		loadingTrades = false;
 	}
 
+	async function loadWaivers(rosterId) {
+		loadingWaivers = true;
+		try {
+			const res = await fetch(`/api/agent/waivers?roster=${rosterId}`);
+			waiverData = await res.json();
+		} catch (e) {
+			console.error('Failed to load waivers:', e);
+		}
+		loadingWaivers = false;
+	}
+
 	async function searchPlayers() {
 		if (!playerSearchQuery || playerSearchQuery.length < 2) return;
 		searchingPlayers = true;
+		selectedPlayerProfile = null;
 		try {
 			const res = await fetch(`/api/agent/players?q=${encodeURIComponent(playerSearchQuery)}`);
 			playerSearchResults = await res.json();
@@ -39,6 +55,17 @@
 			console.error('Search failed:', e);
 		}
 		searchingPlayers = false;
+	}
+
+	async function loadPlayerProfile(playerId) {
+		loadingProfile = true;
+		try {
+			const res = await fetch(`/api/agent/players?id=${playerId}`);
+			selectedPlayerProfile = await res.json();
+		} catch (e) {
+			console.error('Profile load failed:', e);
+		}
+		loadingProfile = false;
 	}
 
 	function getGradeColor(grade) {
@@ -65,6 +92,28 @@
 		if (strategy === 'Win Now') return '#22c55e';
 		if (strategy === 'Retool') return '#eab308';
 		return '#ef4444';
+	}
+
+	function getSignalColor(signal) {
+		if (signal === 'Sell High') return '#f97316';
+		if (signal === 'Buy Low') return '#22c55e';
+		if (signal === 'Hold') return '#3b82f6';
+		return '#6b7280';
+	}
+
+	function getTagColor(tag) {
+		const colors = {
+			'Sell High': '#f97316',
+			'Buy Low': '#22c55e',
+			'Youth Swap': '#3b82f6',
+			'Position Swap': '#a855f7',
+			'Consolidation': '#eab308',
+			'Includes Picks': '#06b6d4',
+			'Godfather Offer': '#ec4899',
+			'Overpay': '#f97316',
+			'Picks Return': '#06b6d4',
+		};
+		return colors[tag] || '#6b7280';
 	}
 </script>
 
@@ -94,6 +143,29 @@
 	.agent-header p {
 		color: #94a3b8;
 		font-size: 0.95em;
+	}
+
+	.format-badges {
+		display: flex;
+		gap: 8px;
+		justify-content: center;
+		margin-top: 8px;
+	}
+
+	.format-badge {
+		padding: 2px 10px;
+		border-radius: 12px;
+		font-size: 0.75em;
+		font-weight: 600;
+		background: #1e293b;
+		border: 1px solid #334155;
+		color: #94a3b8;
+	}
+
+	.format-badge.active {
+		background: #a855f720;
+		border-color: #a855f7;
+		color: #a855f7;
 	}
 
 	.roster-select {
@@ -169,20 +241,9 @@
 		flex-wrap: wrap;
 	}
 
-	.stat-box {
-		text-align: center;
-	}
-
-	.stat-box .value {
-		font-size: 1.5em;
-		font-weight: 700;
-	}
-
-	.stat-box .label {
-		font-size: 0.75em;
-		color: #94a3b8;
-		text-transform: uppercase;
-	}
+	.stat-box { text-align: center; }
+	.stat-box .value { font-size: 1.5em; font-weight: 700; }
+	.stat-box .label { font-size: 0.75em; color: #94a3b8; text-transform: uppercase; }
 
 	.grid {
 		display: grid;
@@ -214,6 +275,23 @@
 		font-size: 1.1em;
 	}
 
+	.signal-badge {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-size: 0.7em;
+		font-weight: 600;
+	}
+
+	.tag-badge {
+		display: inline-block;
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 0.7em;
+		font-weight: 600;
+		margin-right: 4px;
+	}
+
 	.position-row {
 		display: flex;
 		justify-content: space-between;
@@ -238,6 +316,16 @@
 	.player-meta { color: #94a3b8; font-size: 0.85em; }
 	.player-value { font-weight: 600; }
 
+	.player-clickable {
+		cursor: pointer;
+		transition: background 0.2s;
+		padding: 8px;
+		border-radius: 6px;
+		margin: -4px -8px;
+	}
+
+	.player-clickable:hover { background: #0f172a; }
+
 	.trade-card {
 		background: #1e293b;
 		border-radius: 12px;
@@ -251,6 +339,8 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 12px;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.trade-sides {
@@ -260,13 +350,16 @@
 		align-items: center;
 	}
 
-	.trade-arrow {
-		font-size: 1.5em;
-		color: #64748b;
-	}
-
+	.trade-arrow { font-size: 1.5em; color: #64748b; }
 	.trade-side { padding: 10px; background: #0f172a; border-radius: 8px; }
 	.trade-side h4 { margin: 0 0 8px; font-size: 0.85em; color: #94a3b8; }
+
+	.trade-tags {
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+		margin-top: 8px;
+	}
 
 	.action-card {
 		padding: 12px;
@@ -403,15 +496,6 @@
 		color: #94a3b8;
 	}
 
-	.age-legend span::before {
-		content: '';
-		display: inline-block;
-		width: 10px;
-		height: 10px;
-		border-radius: 2px;
-		margin-right: 4px;
-	}
-
 	.draft-card {
 		background: #0f172a;
 		padding: 15px;
@@ -421,6 +505,71 @@
 
 	.draft-card h4 { margin: 0 0 6px; color: #e2e8f0; }
 	.draft-card p { margin: 0; font-size: 0.85em; color: #94a3b8; }
+
+	.waiver-category {
+		margin-bottom: 20px;
+	}
+
+	.waiver-category h4 {
+		margin: 0 0 10px;
+		font-size: 0.95em;
+		padding-bottom: 6px;
+		border-bottom: 1px solid #334155;
+	}
+
+	.swap-card {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		gap: 10px;
+		align-items: center;
+		padding: 12px;
+		background: #0f172a;
+		border-radius: 8px;
+		margin-bottom: 8px;
+	}
+
+	.swap-arrow {
+		color: #22c55e;
+		font-size: 1.2em;
+		font-weight: bold;
+	}
+
+	.priority-badge {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-size: 0.7em;
+		font-weight: 600;
+	}
+
+	.priority-badge.High { background: #ef444420; color: #ef4444; }
+	.priority-badge.Medium { background: #eab30820; color: #eab308; }
+	.priority-badge.Low { background: #3b82f620; color: #3b82f6; }
+
+	.scouting-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.scouting-stat {
+		background: #0f172a;
+		padding: 8px;
+		border-radius: 6px;
+		text-align: center;
+	}
+
+	.scouting-stat .stat-val { font-size: 1.1em; font-weight: 700; }
+	.scouting-stat .stat-lbl { font-size: 0.7em; color: #94a3b8; }
+
+	.profile-panel {
+		background: #1e293b;
+		border-radius: 12px;
+		padding: 20px;
+		margin-top: 15px;
+		border: 1px solid #334155;
+	}
 </style>
 
 <div class="agent-page">
@@ -454,17 +603,28 @@
 		{#await data.analysisPromise}
 			<div class="loading">
 				<p>AI Agent is analyzing your league...</p>
-				<p style="color: #94a3b8; font-size: 0.85em;">Pulling rosters, grading players, finding trades...</p>
+				<p style="color: #94a3b8; font-size: 0.85em;">Pulling rosters, grading players, scouring waivers, finding trades...</p>
 				<br />
 				<LinearProgress indeterminate />
 			</div>
 		{:then analysis}
+			<!-- League Format Badges -->
+			{#if analysis.league.format}
+				<div class="format-badges">
+					<span class="format-badge" class:active={analysis.league.format.superflex}>SF</span>
+					<span class="format-badge" class:active={analysis.league.format.tePremium}>TEP</span>
+					<span class="format-badge" class:active={analysis.league.format.halfPpr}>Half PPR</span>
+					<span class="format-badge" class:active={analysis.league.format.ppr}>PPR</span>
+				</div>
+			{/if}
+
 			<!-- Tab Navigation -->
-			<div class="tab-bar">
+			<div class="tab-bar" style="margin-top: 15px;">
 				<button class:active={activeTab === 'overview'} on:click={() => activeTab = 'overview'}>Overview</button>
 				<button class:active={activeTab === 'roster'} on:click={() => activeTab = 'roster'}>Roster</button>
 				<button class:active={activeTab === 'lineup'} on:click={() => activeTab = 'lineup'}>Lineup</button>
 				<button class:active={activeTab === 'trades'} on:click={() => { activeTab = 'trades'; if (!tradeData) loadTrades(data.rosterId); }}>Trades</button>
+				<button class:active={activeTab === 'waivers'} on:click={() => { activeTab = 'waivers'; if (!waiverData) loadWaivers(data.rosterId); }}>Waivers</button>
 				<button class:active={activeTab === 'strategy'} on:click={() => activeTab = 'strategy'}>Strategy</button>
 				<button class:active={activeTab === 'rankings'} on:click={() => activeTab = 'rankings'}>Power Rankings</button>
 				<button class:active={activeTab === 'players'} on:click={() => activeTab = 'players'}>Player Search</button>
@@ -499,7 +659,6 @@
 			<!-- OVERVIEW TAB -->
 			{#if activeTab === 'overview'}
 				<div class="grid">
-					<!-- Roster Grade -->
 					<div class="card">
 						<h3>Roster Overview</h3>
 						<div style="text-align: center; margin-bottom: 15px;">
@@ -513,7 +672,6 @@
 						<div class="position-row"><span>Avg Age</span><span>{analysis.roster.avgAge}</span></div>
 					</div>
 
-					<!-- Position Grades -->
 					<div class="card">
 						<h3>Position Grades</h3>
 						{#each Object.entries(analysis.roster.breakdown) as [pos, group]}
@@ -530,7 +688,6 @@
 						{/each}
 					</div>
 
-					<!-- Strategy Quick Look -->
 					<div class="card">
 						<h3>Dynasty Strategy</h3>
 						<div style="text-align: center; margin-bottom: 12px;">
@@ -546,13 +703,19 @@
 						</p>
 					</div>
 
-					<!-- Top Players -->
 					<div class="card">
 						<h3>Most Valuable Players</h3>
 						{#each analysis.roster.topPlayers as player, i}
 							<div class="player-row">
 								<div>
-									<div class="player-name">{i + 1}. {player.name}</div>
+									<div class="player-name">
+										{i + 1}. {player.name}
+										{#if player.marketSignal && player.marketSignal.signal !== 'Hold' && player.marketSignal.signal !== 'Neutral'}
+											<span class="signal-badge" style="background: {getSignalColor(player.marketSignal.signal)}20; color: {getSignalColor(player.marketSignal.signal)}">
+												{player.marketSignal.signal}
+											</span>
+										{/if}
+									</div>
 									<div class="player-meta">{player.position} - {player.team} - Age {player.age}</div>
 								</div>
 								<div class="player-value" style="color: {getTierColor(player.tier)}">{player.dynastyValue.toLocaleString()}</div>
@@ -560,7 +723,6 @@
 						{/each}
 					</div>
 
-					<!-- Strengths -->
 					{#if analysis.roster.strengths.length > 0}
 						<div class="card">
 							<h3>Strengths</h3>
@@ -575,7 +737,6 @@
 						</div>
 					{/if}
 
-					<!-- Weaknesses -->
 					{#if analysis.roster.weaknesses.length > 0}
 						<div class="card">
 							<h3>Weaknesses</h3>
@@ -590,21 +751,53 @@
 						</div>
 					{/if}
 
-					<!-- Top Trades Preview -->
+					<!-- Waiver Preview -->
+					{#if analysis.waivers && analysis.waivers.waiverTargets}
+						<div class="card">
+							<h3>Top Waiver Pickups</h3>
+							{#each (analysis.waivers.waiverTargets.hotPickups || []).slice(0, 3) as fa}
+								<div class="player-row">
+									<div>
+										<div class="player-name">{fa.name}</div>
+										<div class="player-meta">{fa.position} - {fa.team} | {fa.reason}</div>
+									</div>
+									<div class="player-value" style="color: #22c55e">{fa.dynastyValue.toLocaleString()}</div>
+								</div>
+							{/each}
+							<button on:click={() => { activeTab = 'waivers'; if (!waiverData) loadWaivers(data.rosterId); }} style="margin-top: 8px; padding: 8px 16px; border-radius: 6px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer;">
+								View All Waivers
+							</button>
+						</div>
+					{/if}
+
 					{#if analysis.trades.length > 0}
 						<div class="card" style="grid-column: 1 / -1;">
 							<h3>Top Trade Suggestions</h3>
 							{#each analysis.trades.slice(0, 3) as trade}
 								<div style="padding: 10px; background: #0f172a; border-radius: 8px; margin-bottom: 8px;">
-									<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-										<strong>Trade with {trade.partnerTeamName}</strong>
+									<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+										<div>
+											<strong>Trade with {trade.partnerTeamName}</strong>
+											{#if trade.tags}
+												{#each trade.tags as tag}
+													<span class="tag-badge" style="background: {getTagColor(tag)}20; color: {getTagColor(tag)}">{tag}</span>
+												{/each}
+											{/if}
+										</div>
 										<span class="grade-badge" style="background: {trade.fairness.score >= 70 ? '#22c55e' : '#eab308'}20; color: {trade.fairness.score >= 70 ? '#22c55e' : '#eab308'}; font-size: 0.8em; padding: 2px 8px;">
 											{trade.fairness.verdict} ({trade.fairness.score})
 										</span>
 									</div>
 									<div style="font-size: 0.85em; color: #94a3b8;">
-										Send: {trade.send.map(p => `${p.name} (${p.position})`).join(', ')} |
+										Send: {trade.send.map(p => `${p.name} (${p.position})`).join(', ')}
+										{#if trade.sendPicks && trade.sendPicks.length > 0}
+											+ {trade.sendPicks.map(p => p.label).join(', ')}
+										{/if}
+										 |
 										Receive: {trade.receive.map(p => `${p.name} (${p.position})`).join(', ')}
+										{#if trade.receivePicks && trade.receivePicks.length > 0}
+											+ {trade.receivePicks.map(p => p.label).join(', ')}
+										{/if}
 									</div>
 								</div>
 							{/each}
@@ -630,11 +823,21 @@
 							{#each group.players as player}
 								<div class="player-row">
 									<div>
-										<div class="player-name">{player.name}</div>
+										<div class="player-name">
+											{player.name}
+											{#if player.marketSignal && player.marketSignal.signal !== 'Hold' && player.marketSignal.signal !== 'Neutral'}
+												<span class="signal-badge" style="background: {getSignalColor(player.marketSignal.signal)}20; color: {getSignalColor(player.marketSignal.signal)}">
+													{player.marketSignal.signal}
+												</span>
+											{/if}
+										</div>
 										<div class="player-meta">
 											{player.team} - Age {player.age}
 											{#if player.injuryStatus}
 												<span style="color: #ef4444;"> ({player.injuryStatus})</span>
+											{/if}
+											{#if player.scouting?.draftCapital}
+												<span style="color: #64748b;"> | {player.scouting.draftCapital.label}</span>
 											{/if}
 										</div>
 									</div>
@@ -709,34 +912,64 @@
 						<LinearProgress indeterminate />
 					</div>
 				{:else if tradeData}
-					<!-- Positional Needs -->
 					<div class="card" style="margin-bottom: 20px;">
 						<h3>Your Positional Needs</h3>
-						<div class="grid" style="margin-bottom: 0;">
-							{#each tradeData.myNeeds.filter(n => n.position !== 'K' && n.position !== 'DEF').slice(0, 4) as need}
-								<div class="position-row">
-									<div>
-										<strong>{need.position}</strong>
-										<span class="grade-badge" style="background: {getGradeColor(need.grade)}20; color: {getGradeColor(need.grade)}; font-size: 0.75em; padding: 1px 6px; margin-left: 5px;">{need.grade}</span>
-									</div>
-									<div style="font-size: 0.85em; color: #94a3b8;">
-										{need.qualityStarters}/{need.requiredStarters} starters | Depth: {need.depth}
-									</div>
+						{#each tradeData.myNeeds.filter(n => n.position !== 'K' && n.position !== 'DEF').slice(0, 4) as need}
+							<div class="position-row">
+								<div>
+									<strong>{need.position}</strong>
+									<span class="grade-badge" style="background: {getGradeColor(need.grade)}20; color: {getGradeColor(need.grade)}; font-size: 0.75em; padding: 1px 6px; margin-left: 5px;">{need.grade}</span>
 								</div>
-							{/each}
-						</div>
+								<div style="font-size: 0.85em; color: #94a3b8;">
+									{need.qualityStarters}/{need.requiredStarters} starters | Depth: {need.depth}
+								</div>
+							</div>
+						{/each}
 					</div>
 
-					<!-- Trade Packages -->
+					<!-- Trade Partners -->
+					{#if tradeData.partners && tradeData.partners.length > 0}
+						<div class="card" style="margin-bottom: 20px;">
+							<h3>Trade Partner Strategies</h3>
+							<div class="grid" style="margin-bottom: 0;">
+								{#each tradeData.partners as partner}
+									<div class="position-row">
+										<div>
+											<strong>{partner.ownerName}</strong>
+											<span class="signal-badge" style="background: {getStrategyColor(partner.strategy === 'Contending' ? 'Win Now' : partner.strategy)}20; color: {getStrategyColor(partner.strategy === 'Contending' ? 'Win Now' : partner.strategy)}">
+												{partner.strategy}
+											</span>
+										</div>
+										<div style="font-size: 0.8em; color: #94a3b8;">
+											Avg: {partner.avgAge} | Picks: {partner.pickQuality}
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
 					<h3 style="margin-bottom: 12px;">Recommended Trade Packages</h3>
 					{#each tradeData.packages as trade, i}
 						<div class="trade-card">
 							<div class="trade-header">
-								<strong>#{i + 1} - Trade with {trade.partnerTeamName}</strong>
+								<div>
+									<strong>#{i + 1} - Trade with {trade.partnerTeamName}</strong>
+									{#if trade.partnerStrategy}
+										<span style="font-size: 0.75em; color: #64748b; margin-left: 6px;">({trade.partnerStrategy})</span>
+									{/if}
+								</div>
 								<span class="grade-badge" style="background: {trade.fairness.score >= 70 ? '#22c55e' : trade.fairness.score >= 50 ? '#eab308' : '#ef4444'}20; color: {trade.fairness.score >= 70 ? '#22c55e' : trade.fairness.score >= 50 ? '#eab308' : '#ef4444'}; font-size: 0.85em; padding: 3px 10px;">
 									{trade.fairness.verdict} ({trade.fairness.score}/100)
 								</span>
 							</div>
+							{#if trade.tags && trade.tags.length > 0}
+								<div class="trade-tags" style="margin-bottom: 10px;">
+									{#each trade.tags as tag}
+										<span class="tag-badge" style="background: {getTagColor(tag)}20; color: {getTagColor(tag)}">{tag}</span>
+									{/each}
+								</div>
+							{/if}
 							<div class="trade-sides">
 								<div class="trade-side">
 									<h4>You Send</h4>
@@ -746,6 +979,14 @@
 											<span class="player-meta">{player.position} | {player.dynastyValue.toLocaleString()}</span>
 										</div>
 									{/each}
+									{#if trade.sendPicks && trade.sendPicks.length > 0}
+										{#each trade.sendPicks as pick}
+											<div class="player-row">
+												<span class="player-name" style="color: #06b6d4;">{pick.label}</span>
+												<span class="player-meta">{pick.value.toLocaleString()}</span>
+											</div>
+										{/each}
+									{/if}
 									<div style="text-align: right; font-weight: 600; margin-top: 5px;">Total: {trade.fairness.sendValue.toLocaleString()}</div>
 								</div>
 								<div class="trade-arrow">&#8644;</div>
@@ -757,6 +998,14 @@
 											<span class="player-meta">{player.position} | {player.dynastyValue.toLocaleString()}</span>
 										</div>
 									{/each}
+									{#if trade.receivePicks && trade.receivePicks.length > 0}
+										{#each trade.receivePicks as pick}
+											<div class="player-row">
+												<span class="player-name" style="color: #06b6d4;">{pick.label}</span>
+												<span class="player-meta">{pick.value.toLocaleString()}</span>
+											</div>
+										{/each}
+									{/if}
 									<div style="text-align: right; font-weight: 600; margin-top: 5px;">Total: {trade.fairness.receiveValue.toLocaleString()}</div>
 								</div>
 							</div>
@@ -768,13 +1017,157 @@
 
 					{#if tradeData.packages.length === 0}
 						<div class="card">
-							<p style="text-align: center; color: #94a3b8;">No trade packages found. Your roster may be well-balanced or league rosters don't have matching trade partners.</p>
+							<p style="text-align: center; color: #94a3b8;">No trade packages found.</p>
 						</div>
 					{/if}
 				{:else}
 					<div class="card">
 						<p style="text-align: center;">
 							<button on:click={() => loadTrades(data.rosterId)}>Load Trade Suggestions</button>
+						</p>
+					</div>
+				{/if}
+
+			<!-- WAIVERS TAB -->
+			{:else if activeTab === 'waivers'}
+				{#if loadingWaivers}
+					<div class="loading">
+						<p>Scouring the waiver wire...</p>
+						<br />
+						<LinearProgress indeterminate />
+					</div>
+				{:else if waiverData}
+					<!-- Summary -->
+					<div class="card" style="margin-bottom: 20px;">
+						<h3>Waiver Wire Summary</h3>
+						<div class="grid" style="margin-bottom: 0;">
+							<div class="position-row"><span>Total Free Agents Analyzed</span><strong>{waiverData.summary.totalFreeAgents}</strong></div>
+							<div class="position-row"><span>Hot Pickups Found</span><strong style="color: #22c55e">{waiverData.summary.hotPickupCount}</strong></div>
+							<div class="position-row"><span>Drop Candidates</span><strong style="color: #ef4444">{waiverData.summary.dropCandidateCount}</strong></div>
+							<div class="position-row"><span>High Priority Swaps</span><strong style="color: #f97316">{waiverData.summary.highPrioritySwaps}</strong></div>
+						</div>
+					</div>
+
+					<!-- Swap Recommendations -->
+					{#if waiverData.swapRecommendations && waiverData.swapRecommendations.length > 0}
+						<div class="card" style="margin-bottom: 20px;">
+							<h3>Recommended Moves (Add/Drop)</h3>
+							{#each waiverData.swapRecommendations as swap}
+								<div class="swap-card">
+									<div>
+										<div style="font-size: 0.75em; color: #ef4444; font-weight: 600;">DROP</div>
+										<div class="player-name">{swap.drop.name}</div>
+										<div class="player-meta">{swap.drop.position} - {swap.drop.team} | {swap.drop.dynastyValue.toLocaleString()}</div>
+									</div>
+									<div style="text-align: center;">
+										<div class="swap-arrow">&#8594;</div>
+										<span class="priority-badge {swap.priority}">{swap.priority}</span>
+										<div style="font-size: 0.7em; color: #22c55e; margin-top: 2px;">+{swap.valueDiff.toLocaleString()}</div>
+									</div>
+									<div>
+										<div style="font-size: 0.75em; color: #22c55e; font-weight: 600;">ADD</div>
+										<div class="player-name">{swap.add.name}</div>
+										<div class="player-meta">{swap.add.position} - {swap.add.team} | {swap.add.dynastyValue.toLocaleString()}</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<div class="grid">
+						<!-- Hot Pickups -->
+						{#if waiverData.waiverTargets.hotPickups.length > 0}
+							<div class="card">
+								<h3 style="color: #22c55e;">Hot Pickups</h3>
+								{#each waiverData.waiverTargets.hotPickups as fa}
+									<div class="player-row">
+										<div>
+											<div class="player-name">{fa.name}</div>
+											<div class="player-meta">{fa.position} - {fa.team} | Age {fa.age}</div>
+											<div style="font-size: 0.75em; color: #22c55e;">{fa.reason}</div>
+										</div>
+										<div class="player-value">{fa.dynastyValue.toLocaleString()}</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Stash Candidates -->
+						{#if waiverData.waiverTargets.stashCandidates.length > 0}
+							<div class="card">
+								<h3 style="color: #a855f7;">Stash Candidates</h3>
+								{#each waiverData.waiverTargets.stashCandidates as fa}
+									<div class="player-row">
+										<div>
+											<div class="player-name">{fa.name}</div>
+											<div class="player-meta">{fa.position} - {fa.team} | Age {fa.age}</div>
+											<div style="font-size: 0.75em; color: #a855f7;">{fa.reason}</div>
+										</div>
+										<div class="player-value">{fa.dynastyValue.toLocaleString()}</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Streaming Options -->
+						{#if waiverData.waiverTargets.streamingOptions.length > 0}
+							<div class="card">
+								<h3 style="color: #3b82f6;">Streaming Options</h3>
+								{#each waiverData.waiverTargets.streamingOptions as fa}
+									<div class="player-row">
+										<div>
+											<div class="player-name">{fa.name}</div>
+											<div class="player-meta">{fa.position} - {fa.team}</div>
+											<div style="font-size: 0.75em; color: #3b82f6;">{fa.reason}</div>
+										</div>
+										<div class="player-value">{fa.avgProjection?.toFixed(1) || '--'} PPG</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Handcuffs -->
+						{#if waiverData.waiverTargets.handcuffs.length > 0}
+							<div class="card">
+								<h3 style="color: #eab308;">Handcuffs</h3>
+								{#each waiverData.waiverTargets.handcuffs as fa}
+									<div class="player-row">
+										<div>
+											<div class="player-name">{fa.name}</div>
+											<div class="player-meta">{fa.position} - {fa.team}</div>
+											<div style="font-size: 0.75em; color: #eab308;">{fa.reason}</div>
+										</div>
+										<div class="player-value">{fa.dynastyValue.toLocaleString()}</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Drop Candidates -->
+					{#if waiverData.dropCandidates && waiverData.dropCandidates.length > 0}
+						<div class="card" style="margin-top: 15px;">
+							<h3 style="color: #ef4444;">Drop Candidates</h3>
+							{#each waiverData.dropCandidates as player}
+								<div class="player-row">
+									<div>
+										<div class="player-name">{player.name}</div>
+										<div class="player-meta">{player.position} - {player.team} | Value: {player.dynastyValue.toLocaleString()}</div>
+										<div style="font-size: 0.75em; color: #ef4444;">
+											{player.dropReasons.join(' | ')}
+										</div>
+									</div>
+									<div style="text-align: right;">
+										<div style="font-size: 0.85em; color: #ef4444;">Drop Score: {player.dropScore}</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{:else}
+					<div class="card">
+						<p style="text-align: center;">
+							<button on:click={() => loadWaivers(data.rosterId)}>Scour Waiver Wire</button>
 						</p>
 					</div>
 				{/if}
@@ -796,7 +1189,6 @@
 				</div>
 
 				<div class="grid">
-					<!-- Championship Window -->
 					<div class="card">
 						<h3>Championship Window</h3>
 						<div class="position-row"><span>Window Status</span><strong>{analysis.strategy.windowAnalysis.windowStatus}</strong></div>
@@ -808,7 +1200,6 @@
 						<div class="position-row"><span>Elite WRs (2+)</span><strong>{analysis.strategy.windowAnalysis.hasEliteWRs ? 'Yes' : 'No'}</strong></div>
 					</div>
 
-					<!-- Age Profile -->
 					<div class="card">
 						<h3>Age Profile</h3>
 						<div class="position-row"><span>Average Age</span><strong>{analysis.strategy.ageProfile.avgAge}</strong></div>
@@ -819,13 +1210,12 @@
 							<div class="veteran" style="width: {analysis.strategy.ageProfile.veteranPercent}%"></div>
 						</div>
 						<div class="age-legend">
-							<span style="color: #22c55e">Young (&le;24): {analysis.strategy.ageProfile.youngCount}</span>
-							<span style="color: #3b82f6">Prime (25-29): {analysis.strategy.ageProfile.primeCount}</span>
-							<span style="color: #ef4444">Veteran (30+): {analysis.strategy.ageProfile.veteranCount}</span>
+							<span style="color: #22c55e">Young: {analysis.strategy.ageProfile.youngCount}</span>
+							<span style="color: #3b82f6">Prime: {analysis.strategy.ageProfile.primeCount}</span>
+							<span style="color: #ef4444">Vet: {analysis.strategy.ageProfile.veteranCount}</span>
 						</div>
 					</div>
 
-					<!-- Draft Strategy -->
 					<div class="card">
 						<h3>Draft Strategy</h3>
 						<div class="draft-card">
@@ -849,7 +1239,6 @@
 					</div>
 				</div>
 
-				<!-- Action Plan -->
 				<div class="card" style="margin-top: 15px;">
 					<h3>Action Plan</h3>
 					{#each analysis.strategy.actionPlan as action}
@@ -899,12 +1288,14 @@
 					{/if}
 
 					{#each playerSearchResults as player}
-						<div class="player-row">
-							<div>
-								<div class="player-name">{player.name}</div>
-								<div class="player-meta">{player.position} - {player.team}</div>
+						<div class="player-clickable" on:click={() => loadPlayerProfile(player.id)} on:keydown={(e) => e.key === 'Enter' && loadPlayerProfile(player.id)} role="button" tabindex="0">
+							<div class="player-row">
+								<div>
+									<div class="player-name">{player.name}</div>
+									<div class="player-meta">{player.position} - {player.team}{player.age ? ` - Age ${player.age}` : ''}</div>
+								</div>
+								<div class="player-meta" style="color: #3b82f6; cursor: pointer;">View Profile</div>
 							</div>
-							<div class="player-meta">ID: {player.id}</div>
 						</div>
 					{/each}
 
@@ -912,6 +1303,130 @@
 						<p style="text-align: center; color: #94a3b8;">No players found. Try a different search.</p>
 					{/if}
 				</div>
+
+				<!-- Player Profile Panel -->
+				{#if loadingProfile}
+					<div class="profile-panel">
+						<LinearProgress indeterminate />
+					</div>
+				{/if}
+
+				{#if selectedPlayerProfile}
+					<div class="profile-panel">
+						<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px;">
+							<div>
+								<h2 style="margin: 0 0 4px;">
+									{selectedPlayerProfile.name}
+									{#if selectedPlayerProfile.marketSignal && selectedPlayerProfile.marketSignal.signal !== 'Hold'}
+										<span class="signal-badge" style="background: {getSignalColor(selectedPlayerProfile.marketSignal.signal)}20; color: {getSignalColor(selectedPlayerProfile.marketSignal.signal)}; font-size: 0.5em;">
+											{selectedPlayerProfile.marketSignal.signal}
+										</span>
+									{/if}
+								</h2>
+								<div class="player-meta">
+									{selectedPlayerProfile.position} - {selectedPlayerProfile.team} |
+									Age {selectedPlayerProfile.age} |
+									{selectedPlayerProfile.tier}
+									{#if selectedPlayerProfile.college}
+										| {selectedPlayerProfile.college}
+									{/if}
+								</div>
+							</div>
+							<div style="text-align: right;">
+								<div style="font-size: 1.8em; font-weight: 800; color: {getTierColor(selectedPlayerProfile.tier)}">
+									{selectedPlayerProfile.dynastyValue.toLocaleString()}
+								</div>
+								<div style="font-size: 0.8em; color: #94a3b8;">dynasty value</div>
+							</div>
+						</div>
+
+						<div class="grid" style="margin-top: 15px;">
+							<div>
+								<div class="position-row"><span>Window</span><strong>{selectedPlayerProfile.windowStatus}</strong></div>
+								<div class="position-row"><span>Years in Prime</span><strong>{selectedPlayerProfile.yearsInPrime}</strong></div>
+								<div class="position-row"><span>Avg Projection</span><strong>{selectedPlayerProfile.avgProjection} PPG</strong></div>
+								{#if selectedPlayerProfile.yearsExp !== undefined}
+									<div class="position-row"><span>Experience</span><strong>{selectedPlayerProfile.yearsExp} years</strong></div>
+								{/if}
+							</div>
+
+							<!-- Scouting Profile -->
+							{#if selectedPlayerProfile.scouting}
+								<div>
+									{#if selectedPlayerProfile.scouting.draftCapital}
+										<div class="position-row">
+											<span>Draft Capital</span>
+											<strong>{selectedPlayerProfile.scouting.draftCapital.label}</strong>
+										</div>
+									{/if}
+									{#if selectedPlayerProfile.scouting.combine}
+										<div class="position-row">
+											<span>Athletic Grade</span>
+											<strong style="color: {selectedPlayerProfile.scouting.combine.athleticGrade === 'Elite' ? '#a855f7' : selectedPlayerProfile.scouting.combine.athleticGrade === 'Above Average' ? '#22c55e' : '#94a3b8'}">
+												{selectedPlayerProfile.scouting.combine.athleticGrade} ({selectedPlayerProfile.scouting.combine.athleticScore}/10)
+											</strong>
+										</div>
+
+										<div class="scouting-grid">
+											{#if selectedPlayerProfile.scouting.combine.forty}
+												<div class="scouting-stat">
+													<div class="stat-val">{selectedPlayerProfile.scouting.combine.forty}</div>
+													<div class="stat-lbl">40-Yard</div>
+												</div>
+											{/if}
+											{#if selectedPlayerProfile.scouting.combine.vertical}
+												<div class="scouting-stat">
+													<div class="stat-val">{selectedPlayerProfile.scouting.combine.vertical}"</div>
+													<div class="stat-lbl">Vertical</div>
+												</div>
+											{/if}
+											{#if selectedPlayerProfile.scouting.combine.broad}
+												<div class="scouting-stat">
+													<div class="stat-val">{selectedPlayerProfile.scouting.combine.broad}"</div>
+													<div class="stat-lbl">Broad</div>
+												</div>
+											{/if}
+											{#if selectedPlayerProfile.scouting.combine.bench}
+												<div class="scouting-stat">
+													<div class="stat-val">{selectedPlayerProfile.scouting.combine.bench}</div>
+													<div class="stat-lbl">Bench</div>
+												</div>
+											{/if}
+											{#if selectedPlayerProfile.scouting.combine.height}
+												<div class="scouting-stat">
+													<div class="stat-val">{Math.floor(selectedPlayerProfile.scouting.combine.height / 12)}'{selectedPlayerProfile.scouting.combine.height % 12}"</div>
+													<div class="stat-lbl">Height</div>
+												</div>
+											{/if}
+											{#if selectedPlayerProfile.scouting.combine.weight}
+												<div class="scouting-stat">
+													<div class="stat-val">{selectedPlayerProfile.scouting.combine.weight}</div>
+													<div class="stat-lbl">Weight</div>
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+
+						<!-- Market Signal Details -->
+						{#if selectedPlayerProfile.marketSignal && selectedPlayerProfile.marketSignal.reasons.length > 0}
+							<div style="margin-top: 12px; padding: 10px; background: {getSignalColor(selectedPlayerProfile.marketSignal.signal)}10; border: 1px solid {getSignalColor(selectedPlayerProfile.marketSignal.signal)}40; border-radius: 8px;">
+								<strong style="color: {getSignalColor(selectedPlayerProfile.marketSignal.signal)}">
+									{selectedPlayerProfile.marketSignal.signal}
+								</strong>
+								<div style="font-size: 0.85em; color: #94a3b8; margin-top: 4px;">
+									{selectedPlayerProfile.marketSignal.reasons.join('. ')}
+								</div>
+							</div>
+						{/if}
+
+						<p style="font-size: 0.85em; color: #cbd5e1; line-height: 1.5; margin-top: 12px;">
+							{selectedPlayerProfile.outlook}
+						</p>
+					</div>
+				{/if}
 			{/if}
 
 		{:catch error}
