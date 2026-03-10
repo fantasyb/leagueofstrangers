@@ -58,7 +58,7 @@
 	}
 
 	:global(.prevDEF) {
-		background-color: var(--DEfadeFfade);
+		background-color: var(--DEFfade);
 	}
 
     :global(.prevCB) {

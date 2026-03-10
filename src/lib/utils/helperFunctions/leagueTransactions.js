@@ -165,15 +165,19 @@ const digestTransactions = async ({transactionsData, currentSeason}) => {
 
 		for(const roster of digestedTransaction.rosters) {
 			const type = digestedTransaction.type;
-            for(const manager of leagueTeamManagers.teamManagersMap[season][roster].managers) {
-			    // add to league long totals for each manager involved with the transaction
-                if(!totals.allTime[manager]) {
-                    totals.allTime[manager] = {
-                        trade: 0,
-                        waiver: 0
-                    };
+            const seasonMap = leagueTeamManagers.teamManagersMap[season];
+            const rosterEntry = seasonMap?.[roster];
+            if(rosterEntry) {
+                for(const manager of rosterEntry.managers) {
+                    // add to league long totals for each manager involved with the transaction
+                    if(!totals.allTime[manager]) {
+                        totals.allTime[manager] = {
+                            trade: 0,
+                            waiver: 0
+                        };
+                    }
+                    totals.allTime[manager][type]++;
                 }
-                totals.allTime[manager][type]++;
             }
 
             // add to season long totals for each manager
@@ -260,7 +264,7 @@ const digestTransaction = ({transaction, currentSeason}) => {
 		digestedTransaction.moves.push(move);
 	}
 
-	for(let pick of draftPicks) {
+	for(let pick of (draftPicks || [])) {
 
 		let move = new Array(transactionRosters.length).fill(null);
 
@@ -282,7 +286,7 @@ const digestTransaction = ({transaction, currentSeason}) => {
 		digestedTransaction.moves.push(move);
 	}
 
-	for(let wBudget of transaction.waiver_budget) {
+	for(let wBudget of (transaction.waiver_budget || [])) {
 
 		let move = new Array(transactionRosters.length).fill(null);
 

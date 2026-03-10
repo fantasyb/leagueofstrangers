@@ -6,7 +6,7 @@
 	
 	export let roster, leagueTeamManagers, startersAndReserve, players, rosterPositions, division, expanded;
 
-	$: team = leagueTeamManagers.teamManagersMap[leagueTeamManagers.currentSeason][roster.roster_id].team;
+	$: team = leagueTeamManagers.teamManagersMap[leagueTeamManagers.currentSeason]?.[roster.roster_id]?.team ?? { avatar: 'https://sleepercdn.com/images/v2/icons/player_default.webp', name: 'Unknown Team' };
 
 	let i = 0;
 

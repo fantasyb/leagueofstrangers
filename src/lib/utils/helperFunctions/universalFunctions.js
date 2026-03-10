@@ -61,7 +61,7 @@ export const gotoManager = ({leagueTeamManagers, managerID, rosterID, year}) => 
         }
     } else if(rosterID) {
         // check for matching managerID first
-        for(const mID of leagueTeamManagers.teamManagersMap[year][rosterID].managers) {
+        for(const mID of (leagueTeamManagers.teamManagersMap[year]?.[rosterID]?.managers || [])) {
             managersIndex = managersObj.findIndex(m => m.managerID == mID);
             if(managersIndex > -1) {
                 goto(`/manager?manager=${managersIndex}`);
@@ -203,22 +203,34 @@ export const getAvatarFromTeamManagers = (teamManagers, rosterID, year) => {
     if(!year || year > teamManagers.currentSeason) {
         year = teamManagers.currentSeason;
     }
-    return teamManagers.teamManagersMap[year][rosterID].team.avatar;
+    const seasonMap = teamManagers.teamManagersMap[year];
+    if(!seasonMap || !seasonMap[rosterID]) {
+        return `https://sleepercdn.com/images/v2/icons/player_default.webp`;
+    }
+    return seasonMap[rosterID].team.avatar;
 }
 
 export const getTeamNameFromTeamManagers = (teamManagers, rosterID, year) => {
     if(!year || year > teamManagers.currentSeason) {
         year = teamManagers.currentSeason;
     }
-    return teamManagers.teamManagersMap[year][rosterID].team.name;
+    const seasonMap = teamManagers.teamManagersMap[year];
+    if(!seasonMap || !seasonMap[rosterID]) {
+        return 'Unknown Team';
+    }
+    return seasonMap[rosterID].team.name;
 }
 
 export const renderManagerNames = (teamManagers, rosterID, year) => {
     if(!year || year > teamManagers.currentSeason) {
         year = teamManagers.currentSeason;
     }
+    const seasonMap = teamManagers.teamManagersMap[year];
+    if(!seasonMap || !seasonMap[rosterID]) {
+        return 'Unknown Manager';
+    }
     let managersString = "";
-    for(const managerID of teamManagers.teamManagersMap[year][rosterID].managers) {
+    for(const managerID of seasonMap[rosterID].managers) {
         const manager = teamManagers.users[managerID];
         if(manager) {
             if(managersString != "") {
@@ -234,12 +246,21 @@ export const getTeamFromTeamManagers = (teamManagers, rosterID, year) => {
     if(!year || year > teamManagers.currentSeason) {
         year = teamManagers.currentSeason;
     }
-    return teamManagers.teamManagersMap[year][rosterID]['team'];
+    const seasonMap = teamManagers.teamManagersMap[year];
+    if(!seasonMap || !seasonMap[rosterID]) {
+        return {
+            avatar: `https://sleepercdn.com/images/v2/icons/player_default.webp`,
+            name: 'Unknown Team',
+        };
+    }
+    return seasonMap[rosterID]['team'];
 }
 
 export const getNestedTeamNamesFromTeamManagers = (teamManagers, year, rosterID) => {
-    const originalName = teamManagers.teamManagersMap[year][rosterID]['team']['name'];
-    const currentName = teamManagers.teamManagersMap[teamManagers.currentSeason][rosterID]['team']['name'];
+    const seasonMap = teamManagers.teamManagersMap[year];
+    const currentSeasonMap = teamManagers.teamManagersMap[teamManagers.currentSeason];
+    const originalName = seasonMap?.[rosterID]?.['team']?.['name'] ?? 'Unknown Team';
+    const currentName = currentSeasonMap?.[rosterID]?.['team']?.['name'] ?? 'Unknown Team';
     if(cleanName(originalName) != cleanName(currentName)) {
         return `${originalName}<div class="curOwner">(${currentName})</div>`;
     }
@@ -292,5 +313,5 @@ export const getRosterIDFromManagerIDAndYear = (teamManagers, managerID, year) =
 
 export const checkIfManagerReceivedAward = (teamManagers, awardRosterID, year, managerID) => {
     if(!managerID) return false;
-    return teamManagers.teamManagersMap[year][awardRosterID].managers.indexOf(managerID) > -1;
+    return teamManagers.teamManagersMap[year]?.[awardRosterID]?.managers?.indexOf(managerID) > -1;
 }

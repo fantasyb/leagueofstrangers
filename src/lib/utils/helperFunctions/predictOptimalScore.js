@@ -94,6 +94,15 @@ export const predictScores = (players, week, leagueData) => {
                     powerScore += wr;
                 }
                 break;
+            case 'REC_FLEX':
+                if(wr >= te) {
+                    wrs.shift();
+                    powerScore += wr;
+                } else {
+                    tes.shift();
+                    powerScore += te;
+                }
+                break;
             case 'SUPER_FLEX':
                 if(qb >= wr && qb >= te && qb >= rb) {
                     qbs.shift();
